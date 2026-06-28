@@ -7,6 +7,7 @@ from .tools import (
     compare_segments,
     get_data_quality_report,
     generate_insights,
+    generate_comprehensive_report,
     identify_key_drivers,
 )
 
@@ -61,6 +62,7 @@ root_agent = Agent(
         analyze_csv,
         calculate_metrics,
         generate_insights,
+        generate_comprehensive_report,
         detect_anomalies,
         compare_segments,
         get_data_quality_report,

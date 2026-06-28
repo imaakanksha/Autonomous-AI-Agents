@@ -717,3 +717,70 @@ def generate_insights(file_path: str, question: str = "") -> Dict[str, Any]:
 
     except Exception as e:
         return {"error": str(e), "question": question}
+
+
+def generate_comprehensive_report(
+    file_path: str,
+    question: str = "",
+    target_column: str = "revenue",
+    top_n: int = 3,
+) -> Dict[str, Any]:
+    """Generate a comprehensive analytics report combining multiple analyses.
+
+    The report combines data quality, segment comparison, anomaly detection,
+    key-driver analysis, and a concise executive summary in a single payload.
+    """
+    try:
+        df = load_csv(file_path)
+        quality_report = get_data_quality_report(file_path)
+        insights = generate_insights(file_path, question=question)
+        segment_comparison = compare_segments(
+            file_path,
+            metric_column=target_column if target_column in df.columns else "revenue",
+            segment_column="category" if "category" in df.columns else df.columns[0],
+            aggregation="sum",
+            top_n=top_n,
+        )
+        anomaly_detection = detect_anomalies(
+            file_path,
+            column=target_column if target_column in df.columns else "revenue",
+            method="iqr",
+            threshold=1.5,
+            return_rows=True,
+            max_records=5,
+        )
+        key_drivers = identify_key_drivers(
+            file_path,
+            target_column=target_column if target_column in df.columns else "revenue",
+            top_n=top_n,
+        )
+
+        executive_summary = []
+        if isinstance(insights, dict) and insights.get("findings"):
+            executive_summary.extend(insights["findings"][:3])
+        if isinstance(segment_comparison, dict) and segment_comparison.get("top_performer"):
+            executive_summary.append(
+                f"Best-performing segment is {segment_comparison['top_performer']['segment']} with {segment_comparison['top_performer']['value']}."
+            )
+        if isinstance(anomaly_detection, dict) and anomaly_detection.get("anomalies_detected"):
+            executive_summary.append(
+                f"Detected {anomaly_detection['anomalies_detected']} anomalies in {anomaly_detection['column']}."
+            )
+        if isinstance(key_drivers, dict) and key_drivers.get("top_drivers"):
+            driver_names = ", ".join(item["feature"] for item in key_drivers["top_drivers"][:3])
+            executive_summary.append(f"Top drivers identified: {driver_names}.")
+
+        report = {
+            "question": question or "General analysis",
+            "executive_summary": executive_summary,
+            "data_shape": {"rows": len(df), "columns": len(df.columns)},
+            "quality_report": quality_report,
+            "segment_comparisons": segment_comparison,
+            "anomaly_detection": anomaly_detection,
+            "key_drivers": key_drivers,
+            "insights": insights,
+            "quality_grade": quality_report.get("quality_grade", "Poor") if isinstance(quality_report, dict) else "Poor",
+        }
+        return report
+    except Exception as e:
+        return {"error": str(e), "question": question}

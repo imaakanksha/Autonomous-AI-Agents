@@ -1,5 +1,21 @@
-from google.adk.agents import Agent
-from google.adk.tools import google_search, AgentTool
+try:
+    from google.adk.agents import Agent as GoogleAgent
+    from google.adk.tools import google_search, AgentTool as GoogleAgentTool
+except ImportError:  # pragma: no cover - fallback for environments without the ADK package
+    class GoogleAgent:  # type: ignore[no-redef]
+        def __init__(self, *args, **kwargs):
+            self.name = kwargs.get("name")
+            self.model = kwargs.get("model")
+            self.instruction = kwargs.get("instruction")
+            self.tools = kwargs.get("tools", [])
+
+    def google_search(*args, **kwargs):
+        return {"status": "google_search_unavailable", "message": "Google Search tool not available in this environment."}
+
+    class GoogleAgentTool:  # type: ignore[no-redef]
+        def __init__(self, agent):
+            self.agent = agent
+
 from .tools import (
     analyze_csv,
     calculate_metrics,
@@ -10,6 +26,9 @@ from .tools import (
     generate_comprehensive_report,
     identify_key_drivers,
 )
+
+Agent = GoogleAgent
+AgentTool = GoogleAgentTool
 
 # Sub-agent for web research with specialized instructions
 search_agent = Agent(
@@ -38,9 +57,10 @@ root_agent = Agent(
         "🔍 **ADVANCED ANALYSIS TOOLS:**\n"
         "4. **detect_anomalies**: Find outliers using IQR or Z-score methods (identify unusual patterns)\n"
         "5. **compare_segments**: Benchmark performance across categories/regions (identify winners)\n"
-        "6. **get_data_quality_report**: Check completeness, duplicates, data types, quality score\n\n"
+        "6. **get_data_quality_report**: Check completeness, duplicates, data types, quality score\n"
+        "7. **generate_comprehensive_report**: Produce a single end-to-end report with quality, segments, anomalies, and drivers\n\n"
         "🌐 **EXTERNAL RESEARCH:**\n"
-        "7. **search_agent**: Market research, competitor analysis, industry trends\n\n"
+        "8. **search_agent**: Market research, competitor analysis, industry trends\n\n"
         "💡 **BEST PRACTICES:**\n"
         "- Start with generate_insights for quick overview or get_data_quality_report to assess data\n"
         "- Use compare_segments to identify high-performing vs underperforming areas\n"

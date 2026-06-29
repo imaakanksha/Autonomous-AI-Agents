@@ -784,3 +784,652 @@ def generate_comprehensive_report(
         return report
     except Exception as e:
         return {"error": str(e), "question": question}
+
+
+# ==============================================================================
+# PREDICTIVE ANALYTICS & FORECASTING
+# ==============================================================================
+
+def forecast_revenue_trend(
+    file_path: str,
+    column: str = "revenue",
+    periods_ahead: int = 12,
+    date_column: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Forecast revenue/metrics using linear regression on time-series data.
+    
+    Args:
+        file_path: Path to the CSV file.
+        column: Column to forecast (e.g., 'revenue', 'quantity').
+        periods_ahead: Number of periods to forecast into the future.
+        date_column: Column name containing dates; auto-detected if not provided.
+        
+    Returns:
+        Dict with forecast results, trend line, and confidence bounds.
+    """
+    try:
+        df = load_csv(file_path)
+        
+        if column not in df.columns:
+            raise ValueError(f"Column '{column}' not found in CSV")
+        
+        # Detect date column
+        if date_column is None:
+            date_column = detect_date_column(df)
+        
+        if date_column is None:
+            raise ValueError("No date column found; unable to perform time-series forecast")
+        
+        df[date_column] = pd.to_datetime(df[date_column], errors="coerce")
+        df[column] = safe_numeric_series(df[column])
+        
+        # Aggregate by date (daily aggregation)
+        ts_data = df.groupby(date_column)[column].sum().sort_index()
+        
+        if len(ts_data) < 3:
+            raise ValueError("Need at least 3 time-series data points for forecasting")
+        
+        # Create time index
+        X = np.arange(len(ts_data)).reshape(-1, 1)
+        y = ts_data.values
+        
+        # Fit linear regression
+        from sklearn.linear_model import LinearRegression
+        model = LinearRegression()
+        model.fit(X, y)
+        
+        # Generate forecast
+        future_x = np.arange(len(ts_data), len(ts_data) + periods_ahead).reshape(-1, 1)
+        forecast_values = model.predict(future_x)
+        
+        # Calculate R-squared and slope
+        from sklearn.metrics import r2_score
+        y_pred = model.predict(X)
+        r_squared = r2_score(y, y_pred)
+        
+        # Estimate confidence interval (±15% of recent average)
+        recent_avg = np.mean(y[-3:]) if len(y) >= 3 else np.mean(y)
+        confidence_margin = recent_avg * 0.15
+        
+        result = {
+            "column": column,
+            "historical_periods": len(ts_data),
+            "forecast_periods": periods_ahead,
+            "trend_slope": round(float(model.coef_[0]), 4),
+            "r_squared": round(r_squared, 4),
+            "model_fit_quality": "Strong" if r_squared > 0.7 else "Moderate" if r_squared > 0.4 else "Weak",
+            "forecast": [
+                {
+                    "period": i + 1,
+                    "value": round(float(val), 2),
+                    "confidence_lower": round(float(val - confidence_margin), 2),
+                    "confidence_upper": round(float(val + confidence_margin), 2),
+                }
+                for i, val in enumerate(forecast_values)
+            ],
+            "recent_average": round(recent_avg, 2),
+            "forecast_trend": "increasing" if model.coef_[0] > 0 else "decreasing" if model.coef_[0] < 0 else "stable",
+        }
+        
+        return result
+    except ImportError:
+        return {"error": "scikit-learn not installed; install with: pip install scikit-learn"}
+    except Exception as e:
+        return {"error": str(e), "column": column}
+
+
+def detect_seasonality(
+    file_path: str,
+    column: str = "revenue",
+    date_column: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Detect seasonal patterns in time-series data.
+    
+    Args:
+        file_path: Path to the CSV file.
+        column: Column to analyze for seasonality.
+        date_column: Column name containing dates; auto-detected if not provided.
+        
+    Returns:
+        Dict with seasonal pattern analysis and recommendations.
+    """
+    try:
+        df = load_csv(file_path)
+        
+        if column not in df.columns:
+            raise ValueError(f"Column '{column}' not found")
+        
+        if date_column is None:
+            date_column = detect_date_column(df)
+        
+        if date_column is None:
+            raise ValueError("No date column found for seasonality detection")
+        
+        df[date_column] = pd.to_datetime(df[date_column], errors="coerce")
+        df[column] = safe_numeric_series(df[column])
+        
+        ts_data = df.groupby(date_column)[column].sum().sort_index()
+        
+        # Check for monthly seasonality
+        df_temp = df.copy()
+        df_temp['month'] = df_temp[date_column].dt.month
+        monthly_avg = df_temp.groupby('month')[column].mean()
+        monthly_std = monthly_avg.std()
+        monthly_coeff_var = (monthly_std / monthly_avg.mean()) * 100 if monthly_avg.mean() != 0 else 0
+        
+        # Check for day-of-week seasonality if available
+        df_temp['dayofweek'] = df_temp[date_column].dt.dayofweek
+        weekly_avg = df_temp.groupby('dayofweek')[column].mean()
+        weekly_std = weekly_avg.std()
+        weekly_coeff_var = (weekly_std / weekly_avg.mean()) * 100 if weekly_avg.mean() != 0 else 0
+        
+        result = {
+            "column": column,
+            "data_points": len(ts_data),
+            "monthly_seasonality": {
+                "detected": monthly_coeff_var > 15,  # >15% coefficient of variation indicates seasonality
+                "coefficient_of_variation": round(monthly_coeff_var, 2),
+                "top_performing_month": int(monthly_avg.idxmax()) if len(monthly_avg) > 0 else None,
+                "monthly_pattern": {int(idx): round(float(val), 2) for idx, val in monthly_avg.items()},
+            },
+            "weekly_seasonality": {
+                "detected": weekly_coeff_var > 15,
+                "coefficient_of_variation": round(weekly_coeff_var, 2),
+                "best_day": int(weekly_avg.idxmax()) if len(weekly_avg) > 0 else None,
+                "day_pattern": {
+                    int(idx): round(float(val), 2) 
+                    for idx, val in weekly_avg.items()
+                },
+                "day_names": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+            },
+        }
+        
+        return result
+    except Exception as e:
+        return {"error": str(e), "column": column}
+
+
+# ==============================================================================
+# STATISTICAL HYPOTHESIS TESTING & VALIDATION
+# ==============================================================================
+
+def statistical_significance_test(
+    file_path: str,
+    column_a: str,
+    column_b: str,
+    test_type: str = "ttest",
+) -> Dict[str, Any]:
+    """Perform statistical significance testing between two columns.
+    
+    Args:
+        file_path: Path to the CSV file.
+        column_a: First column to compare.
+        column_b: Second column to compare.
+        test_type: "ttest" (independent t-test), "mannwhitney" (non-parametric), or "pearson" (correlation).
+        
+    Returns:
+        Dict with test results, p-value, and interpretation.
+    """
+    try:
+        from scipy import stats
+        
+        df = load_csv(file_path)
+        
+        if column_a not in df.columns or column_b not in df.columns:
+            raise ValueError(f"Columns not found: {column_a} or {column_b}")
+        
+        data_a = safe_numeric_series(df[column_a]).dropna()
+        data_b = safe_numeric_series(df[column_b]).dropna()
+        
+        if len(data_a) < 2 or len(data_b) < 2:
+            raise ValueError("Each column needs at least 2 non-null values for testing")
+        
+        result = {
+            "column_a": column_a,
+            "column_b": column_b,
+            "test_type": test_type,
+            "n_a": len(data_a),
+            "n_b": len(data_b),
+            "mean_a": round(float(data_a.mean()), 4),
+            "mean_b": round(float(data_b.mean()), 4),
+            "std_a": round(float(data_a.std()), 4),
+            "std_b": round(float(data_b.std()), 4),
+        }
+        
+        if test_type == "ttest":
+            t_stat, p_value = stats.ttest_ind(data_a, data_b)
+            result["test_statistic"] = round(t_stat, 4)
+            result["p_value"] = round(p_value, 6)
+            result["significance_level"] = 0.05
+            result["is_significant"] = p_value < 0.05
+            result["interpretation"] = (
+                f"Columns are significantly different (p={p_value:.6f} < 0.05)" 
+                if p_value < 0.05 
+                else f"No significant difference (p={p_value:.6f} >= 0.05)"
+            )
+        
+        elif test_type == "mannwhitney":
+            u_stat, p_value = stats.mannwhitneyu(data_a, data_b, alternative='two-sided')
+            result["test_statistic"] = round(u_stat, 4)
+            result["p_value"] = round(p_value, 6)
+            result["significance_level"] = 0.05
+            result["is_significant"] = p_value < 0.05
+            result["interpretation"] = (
+                f"Distributions are significantly different (p={p_value:.6f} < 0.05)"
+                if p_value < 0.05
+                else f"No significant difference (p={p_value:.6f} >= 0.05)"
+            )
+        
+        elif test_type == "pearson":
+            corr, p_value = stats.pearsonr(data_a, data_b)
+            result["correlation"] = round(corr, 4)
+            result["p_value"] = round(p_value, 6)
+            result["is_significant"] = p_value < 0.05
+            result["interpretation"] = (
+                f"Significant correlation ({corr:.4f}, p={p_value:.6f})"
+                if p_value < 0.05
+                else f"No significant correlation (p={p_value:.6f})"
+            )
+        
+        else:
+            raise ValueError(f"Unknown test_type: {test_type}")
+        
+        return result
+    
+    except ImportError:
+        return {"error": "scipy not installed; install with: pip install scipy"}
+    except Exception as e:
+        return {"error": str(e), "column_a": column_a, "column_b": column_b}
+
+
+def confidence_interval_analysis(
+    file_path: str,
+    column: str,
+    confidence_level: float = 0.95,
+) -> Dict[str, Any]:
+    """Calculate confidence interval for a column's mean.
+    
+    Args:
+        file_path: Path to the CSV file.
+        column: Column to analyze.
+        confidence_level: Confidence level (0.90, 0.95, or 0.99).
+        
+    Returns:
+        Dict with confidence interval bounds and interpretation.
+    """
+    try:
+        from scipy import stats
+        
+        df = load_csv(file_path)
+        
+        if column not in df.columns:
+            raise ValueError(f"Column '{column}' not found")
+        
+        data = safe_numeric_series(df[column]).dropna()
+        
+        if len(data) < 2:
+            raise ValueError("Need at least 2 data points for confidence interval")
+        
+        n = len(data)
+        mean = data.mean()
+        std_err = data.std() / np.sqrt(n)
+        
+        # Calculate critical value for t-distribution
+        alpha = 1 - confidence_level
+        df_val = n - 1
+        t_crit = stats.t.ppf(1 - alpha/2, df_val)
+        
+        margin_of_error = t_crit * std_err
+        ci_lower = mean - margin_of_error
+        ci_upper = mean + margin_of_error
+        
+        result = {
+            "column": column,
+            "sample_size": n,
+            "mean": round(float(mean), 4),
+            "std_dev": round(float(data.std()), 4),
+            "std_error": round(float(std_err), 6),
+            "confidence_level": confidence_level,
+            "confidence_interval": {
+                "lower_bound": round(float(ci_lower), 4),
+                "upper_bound": round(float(ci_upper), 4),
+                "margin_of_error": round(float(margin_of_error), 4),
+            },
+            "interpretation": (
+                f"We are {int(confidence_level*100)}% confident that the true population mean "
+                f"lies between {ci_lower:.2f} and {ci_upper:.2f}."
+            ),
+        }
+        
+        return result
+    
+    except ImportError:
+        return {"error": "scipy not installed; install with: pip install scipy"}
+    except Exception as e:
+        return {"error": str(e), "column": column}
+
+
+# ==============================================================================
+# BUSINESS METRICS & KPI CALCULATION
+# ==============================================================================
+
+def calculate_business_kpis(
+    file_path: str,
+    date_column: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Calculate key business KPIs (customer metrics, conversion, efficiency ratios).
+    
+    Args:
+        file_path: Path to the CSV file.
+        date_column: Column name for dates; auto-detected if not provided.
+        
+    Returns:
+        Dict with calculated KPIs and business health metrics.
+    """
+    try:
+        df = load_csv(file_path)
+        
+        kpis = {
+            "calculated_kpis": [],
+            "summary": {},
+        }
+        
+        # Revenue metrics
+        if "revenue" in df.columns:
+            revenue = safe_numeric_series(df["revenue"])
+            total_revenue = revenue.sum()
+            avg_transaction = revenue.mean()
+            max_transaction = revenue.max()
+            revenue_per_row = total_revenue / len(df) if len(df) > 0 else 0
+            
+            kpis["calculated_kpis"].append({
+                "name": "Total Revenue",
+                "value": round(total_revenue, 2),
+                "category": "Revenue",
+            })
+            kpis["calculated_kpis"].append({
+                "name": "Average Transaction Value",
+                "value": round(avg_transaction, 2),
+                "category": "Revenue",
+            })
+            kpis["calculated_kpis"].append({
+                "name": "Revenue per Record",
+                "value": round(revenue_per_row, 2),
+                "category": "Revenue",
+            })
+        
+        # Quantity/Volume metrics
+        if "quantity" in df.columns:
+            quantity = safe_numeric_series(df["quantity"])
+            total_quantity = quantity.sum()
+            avg_quantity = quantity.mean()
+            
+            kpis["calculated_kpis"].append({
+                "name": "Total Units Sold",
+                "value": int(total_quantity),
+                "category": "Volume",
+            })
+            kpis["calculated_kpis"].append({
+                "name": "Average Units per Transaction",
+                "value": round(avg_quantity, 2),
+                "category": "Volume",
+            })
+        
+        # Category performance
+        if "category" in df.columns and "revenue" in df.columns:
+            revenue_by_category = df.groupby("category")["revenue"].sum()
+            total_revenue = df["revenue"].sum()
+            top_category = revenue_by_category.idxmax()
+            top_category_share = (revenue_by_category.max() / total_revenue * 100) if total_revenue > 0 else 0
+            
+            kpis["calculated_kpis"].append({
+                "name": "Top Category Revenue Share",
+                "value": round(top_category_share, 2),
+                "unit": "%",
+                "category": "Performance",
+                "detail": f"Category: {top_category}",
+            })
+            
+            kpis["calculated_kpis"].append({
+                "name": "Category Diversity",
+                "value": len(revenue_by_category),
+                "category": "Performance",
+                "detail": f"Number of distinct categories",
+            })
+        
+        # Regional/Segment performance
+        if "region" in df.columns and "revenue" in df.columns:
+            revenue_by_region = df.groupby("region")["revenue"].sum()
+            total_revenue = df["revenue"].sum()
+            top_region = revenue_by_region.idxmax()
+            top_region_share = (revenue_by_region.max() / total_revenue * 100) if total_revenue > 0 else 0
+            
+            kpis["calculated_kpis"].append({
+                "name": "Top Region Revenue Share",
+                "value": round(top_region_share, 2),
+                "unit": "%",
+                "category": "Performance",
+                "detail": f"Region: {top_region}",
+            })
+        
+        # Time-based metrics
+        if date_column is None:
+            date_column = detect_date_column(df)
+        
+        if date_column and date_column in df.columns:
+            df[date_column] = pd.to_datetime(df[date_column], errors="coerce")
+            valid_dates = df[date_column].dropna()
+            
+            if len(valid_dates) > 0 and "revenue" in df.columns:
+                date_range_days = (valid_dates.max() - valid_dates.min()).days + 1
+                if date_range_days > 0:
+                    daily_avg_revenue = df["revenue"].sum() / date_range_days
+                    kpis["calculated_kpis"].append({
+                        "name": "Daily Average Revenue",
+                        "value": round(daily_avg_revenue, 2),
+                        "category": "Time-based",
+                    })
+        
+        # Product metrics
+        if "product" in df.columns:
+            unique_products = df["product"].nunique()
+            kpis["calculated_kpis"].append({
+                "name": "Number of Products",
+                "value": unique_products,
+                "category": "Portfolio",
+            })
+        
+        # Data quality KPI
+        completeness = (1 - (df.isnull().sum().sum() / (len(df) * len(df.columns)))) * 100 if len(df) > 0 else 0
+        kpis["calculated_kpis"].append({
+            "name": "Data Completeness",
+            "value": round(completeness, 2),
+            "unit": "%",
+            "category": "Quality",
+        })
+        
+        kpis["summary"] = {
+            "total_records": len(df),
+            "kpis_calculated": len(kpis["calculated_kpis"]),
+            "categories": list(set(kpi.get("category", "Other") for kpi in kpis["calculated_kpis"])),
+        }
+        
+        return kpis
+    
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ==============================================================================
+# REPORT EXPORT CAPABILITIES
+# ==============================================================================
+
+def export_report_to_excel(
+    report_dict: Dict[str, Any],
+    output_path: str,
+) -> Dict[str, Any]:
+    """Export a comprehensive report dictionary to Excel format.
+    
+    Args:
+        report_dict: The analysis report dictionary (typically from generate_comprehensive_report).
+        output_path: Path where the Excel file should be saved.
+        
+    Returns:
+        Dict with export status and file location.
+    """
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment
+        
+        output_path = resolve_path(output_path)
+        
+        with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
+            # Sheet 1: Executive Summary
+            if "executive_summary" in report_dict and isinstance(report_dict["executive_summary"], list):
+                summary_df = pd.DataFrame({
+                    "Executive Summary": report_dict["executive_summary"]
+                })
+                summary_df.to_excel(writer, sheet_name="Executive Summary", index=False)
+            
+            # Sheet 2: Data Quality
+            if "quality_report" in report_dict and isinstance(report_dict["quality_report"], dict):
+                quality_data = []
+                for key, value in report_dict["quality_report"].items():
+                    if not isinstance(value, (list, dict)):
+                        quality_data.append({"Metric": key, "Value": value})
+                if quality_data:
+                    quality_df = pd.DataFrame(quality_data)
+                    quality_df.to_excel(writer, sheet_name="Data Quality", index=False)
+            
+            # Sheet 3: Segment Comparisons
+            if "segment_comparisons" in report_dict:
+                seg_dict = report_dict["segment_comparisons"]
+                if isinstance(seg_dict, dict) and "segment_results" in seg_dict:
+                    seg_df = pd.DataFrame(list(seg_dict["segment_results"].items()), columns=["Segment", "Value"])
+                    seg_df.to_excel(writer, sheet_name="Segment Analysis", index=False)
+            
+            # Sheet 4: Anomalies
+            if "anomaly_detection" in report_dict:
+                anom_dict = report_dict["anomaly_detection"]
+                if isinstance(anom_dict, dict):
+                    anom_data = [{k: v for k, v in anom_dict.items() if not isinstance(v, (list, dict))}]
+                    anom_df = pd.DataFrame(anom_data).T
+                    anom_df.to_excel(writer, sheet_name="Anomaly Detection")
+            
+            # Sheet 5: Key Drivers
+            if "key_drivers" in report_dict:
+                drivers_dict = report_dict["key_drivers"]
+                if isinstance(drivers_dict, dict) and "top_drivers" in drivers_dict:
+                    drivers_df = pd.DataFrame(drivers_dict["top_drivers"])
+                    drivers_df.to_excel(writer, sheet_name="Key Drivers", index=False)
+            
+            # Sheet 6: Insights
+            if "insights" in report_dict:
+                insights_dict = report_dict["insights"]
+                if isinstance(insights_dict, dict) and "findings" in insights_dict:
+                    insights_df = pd.DataFrame({
+                        "Insights": insights_dict["findings"]
+                    })
+                    insights_df.to_excel(writer, sheet_name="Insights", index=False)
+        
+        return {
+            "status": "success",
+            "file_path": output_path,
+            "message": f"Report exported to Excel: {output_path}",
+        }
+    
+    except ImportError:
+        return {"error": "openpyxl not installed; install with: pip install openpyxl"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def export_report_to_pdf(
+    report_dict: Dict[str, Any],
+    output_path: str,
+    title: str = "Data Analysis Report",
+) -> Dict[str, Any]:
+    """Export a comprehensive report dictionary to PDF format.
+    
+    Args:
+        report_dict: The analysis report dictionary.
+        output_path: Path where the PDF file should be saved.
+        title: Title for the report.
+        
+    Returns:
+        Dict with export status and file location.
+    """
+    try:
+        from reportlab.lib.pagesizes import letter, A4
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.units import inch
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+        from reportlab.lib import colors
+        from reportlab.lib.enums import TA_CENTER, TA_LEFT
+        
+        output_path = resolve_path(output_path)
+        
+        doc = SimpleDocTemplate(output_path, pagesize=letter)
+        story = []
+        styles = getSampleStyleSheet()
+        
+        # Title
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=24,
+            textColor=colors.HexColor('#1f4788'),
+            spaceAfter=30,
+            alignment=TA_CENTER,
+            fontName='Helvetica-Bold'
+        )
+        story.append(Paragraph(title, title_style))
+        story.append(Spacer(1, 0.3*inch))
+        
+        # Executive Summary
+        if "executive_summary" in report_dict:
+            story.append(Paragraph("Executive Summary", styles['Heading2']))
+            if isinstance(report_dict["executive_summary"], list):
+                for item in report_dict["executive_summary"]:
+                    story.append(Paragraph(f"• {item}", styles['Normal']))
+            story.append(Spacer(1, 0.2*inch))
+        
+        # Data Quality
+        if "quality_grade" in report_dict:
+            story.append(Paragraph(f"Data Quality Grade: <b>{report_dict['quality_grade']}</b>", styles['Normal']))
+            story.append(Spacer(1, 0.2*inch))
+        
+        # Key Metrics
+        if "key_drivers" in report_dict and isinstance(report_dict["key_drivers"], dict):
+            drivers = report_dict["key_drivers"]
+            if "top_drivers" in drivers:
+                story.append(Paragraph("Top Drivers", styles['Heading2']))
+                for driver in drivers["top_drivers"]:
+                    story.append(Paragraph(
+                        f"• {driver.get('feature', 'N/A')}: {driver.get('correlation', 'N/A')}",
+                        styles['Normal']
+                    ))
+                story.append(Spacer(1, 0.2*inch))
+        
+        # Insights
+        if "insights" in report_dict and isinstance(report_dict["insights"], dict):
+            insights = report_dict["insights"]
+            if "findings" in insights:
+                story.append(Paragraph("Key Findings", styles['Heading2']))
+                for finding in insights["findings"][:5]:  # Top 5 findings
+                    story.append(Paragraph(f"• {finding}", styles['Normal']))
+                story.append(Spacer(1, 0.2*inch))
+        
+        # Build PDF
+        doc.build(story)
+        
+        return {
+            "status": "success",
+            "file_path": output_path,
+            "message": f"Report exported to PDF: {output_path}",
+        }
+    
+    except ImportError:
+        return {"error": "reportlab not installed; install with: pip install reportlab"}
+    except Exception as e:
+        return {"error": str(e)}

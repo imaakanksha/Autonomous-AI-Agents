@@ -25,6 +25,13 @@ from .tools import (
     generate_insights,
     generate_comprehensive_report,
     identify_key_drivers,
+    forecast_revenue_trend,
+    detect_seasonality,
+    statistical_significance_test,
+    confidence_interval_analysis,
+    calculate_business_kpis,
+    export_report_to_excel,
+    export_report_to_pdf,
 )
 
 Agent = GoogleAgent

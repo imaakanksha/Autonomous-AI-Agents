@@ -66,23 +66,38 @@ root_agent = Agent(
         "5. **compare_segments**: Benchmark performance across categories/regions (identify winners)\n"
         "6. **get_data_quality_report**: Check completeness, duplicates, data types, quality score\n"
         "7. **generate_comprehensive_report**: Produce a single end-to-end report with quality, segments, anomalies, and drivers\n\n"
+        "� **PREDICTIVE ANALYTICS & FORECASTING:**\n"
+        "8. **forecast_revenue_trend**: Project future revenue/metrics using time-series trends with confidence bounds\n"
+        "9. **detect_seasonality**: Identify monthly and weekly patterns to improve planning and forecasting\n\n"
+        "📈 **STATISTICAL RIGOR & VALIDATION:**\n"
+        "10. **statistical_significance_test**: Compare columns with t-test, Mann-Whitney, or Pearson correlation\n"
+        "11. **confidence_interval_analysis**: Calculate 90%/95%/99% confidence intervals for population means\n\n"
+        "💼 **BUSINESS METRICS & KPIs:**\n"
+        "12. **calculate_business_kpis**: Auto-calculate revenue, efficiency, and performance KPIs\n\n"
+        "📄 **REPORT EXPORT & DELIVERY:**\n"
+        "13. **export_report_to_excel**: Export comprehensive analysis to multi-sheet Excel workbooks\n"
+        "14. **export_report_to_pdf**: Generate professional PDF reports with executive summaries\n\n"
         "🌐 **EXTERNAL RESEARCH:**\n"
-        "8. **search_agent**: Market research, competitor analysis, industry trends\n\n"
+        "15. **search_agent**: Market research, competitor analysis, industry trends\n\n"
         "💡 **BEST PRACTICES:**\n"
         "- Start with generate_insights for quick overview or get_data_quality_report to assess data\n"
         "- Use compare_segments to identify high-performing vs underperforming areas\n"
         "- Apply detect_anomalies to spot unusual patterns or data quality issues\n"
-        "- Combine local analysis with search_agent for external validation\n"
-        "- Provide specific recommendations backed by data and methodology\n"
-        "- Always cite sources and explain analytical approach\n"
-        "- Ask clarifying questions if the request needs specificity\n\n"
+        "- Use forecast_revenue_trend for forward-looking planning and detect_seasonality for tactical optimization\n"
+        "- Validate findings with statistical_significance_test before drawing conclusions\n"
+        "- Calculate business KPIs to translate findings into actionable metrics\n"
+        "- Export polished reports for stakeholder communication\n"
+        "- Combine local analysis with search_agent for external validation\n\n"
         "🎯 **ANALYSIS WORKFLOW:**\n"
         "→ Understand the business question\n"
         "→ Assess data quality and structure\n"
         "→ Perform comparative/anomaly analysis\n"
         "→ Extract insights and identify patterns\n"
-        "→ Validate with external research if needed\n"
-        "→ Deliver actionable recommendations"
+        "→ Project future trends with forecasting (if time-based data available)\n"
+        "→ Validate statistical significance of findings\n"
+        "→ Calculate key business metrics and KPIs\n"
+        "→ Export polished reports for delivery\n"
+        "→ Validate with external research if needed"
     ),
     tools=[
         AgentTool(search_agent),
@@ -94,5 +109,12 @@ root_agent = Agent(
         compare_segments,
         get_data_quality_report,
         identify_key_drivers,
+        forecast_revenue_trend,
+        detect_seasonality,
+        statistical_significance_test,
+        confidence_interval_analysis,
+        calculate_business_kpis,
+        export_report_to_excel,
+        export_report_to_pdf,
     ],
 )

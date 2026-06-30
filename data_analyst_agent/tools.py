@@ -28,6 +28,30 @@ def detect_date_column(df: pd.DataFrame) -> Optional[str]:
     return candidates[0] if candidates else None
 
 
+def detect_numeric_column(df: pd.DataFrame, preferred_columns: Optional[List[str]] = None) -> Optional[str]:
+    if preferred_columns is None:
+        preferred_columns = ["revenue", "sales", "amount", "quantity", "value", "price"]
+
+    for col in preferred_columns:
+        if col in df.columns and pd.api.types.is_numeric_dtype(df[col]):
+            return col
+
+    numeric_cols = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col])]
+    return numeric_cols[0] if numeric_cols else None
+
+
+def detect_segment_column(df: pd.DataFrame, exclude_columns: Optional[List[str]] = None) -> Optional[str]:
+    exclude_columns = exclude_columns or []
+    categorical_cols = [
+        col for col in df.columns
+        if col not in exclude_columns and not pd.api.types.is_numeric_dtype(df[col])
+    ]
+    for preferred in ["category", "region", "segment", "product"]:
+        if preferred in categorical_cols:
+            return preferred
+    return categorical_cols[0] if categorical_cols else None
+
+
 def parse_optional_date(value: str) -> datetime:
     try:
         return pd.to_datetime(value)
@@ -734,16 +758,25 @@ def generate_comprehensive_report(
         df = load_csv(file_path)
         quality_report = get_data_quality_report(file_path)
         insights = generate_insights(file_path, question=question)
+
+        target_column = target_column if target_column in df.columns else detect_numeric_column(df)
+        if target_column is None:
+            raise ValueError("No numeric target column found for the comprehensive report")
+
+        segment_column = detect_segment_column(df, exclude_columns=[target_column])
+        if segment_column is None:
+            segment_column = df.columns[0]
+
         segment_comparison = compare_segments(
             file_path,
-            metric_column=target_column if target_column in df.columns else "revenue",
-            segment_column="category" if "category" in df.columns else df.columns[0],
+            metric_column=target_column,
+            segment_column=segment_column,
             aggregation="sum",
             top_n=top_n,
         )
         anomaly_detection = detect_anomalies(
             file_path,
-            column=target_column if target_column in df.columns else "revenue",
+            column=target_column,
             method="iqr",
             threshold=1.5,
             return_rows=True,
@@ -751,7 +784,7 @@ def generate_comprehensive_report(
         )
         key_drivers = identify_key_drivers(
             file_path,
-            target_column=target_column if target_column in df.columns else "revenue",
+            target_column=target_column,
             top_n=top_n,
         )
 
@@ -811,8 +844,10 @@ def forecast_revenue_trend(
         df = load_csv(file_path)
         
         if column not in df.columns:
-            raise ValueError(f"Column '{column}' not found in CSV")
-        
+            fallback_column = detect_numeric_column(df)
+            if fallback_column is None:
+                raise ValueError(f"Column '{column}' not found in CSV and no numeric fallback column exists")
+            column = fallback_column
         # Detect date column
         if date_column is None:
             date_column = detect_date_column(df)
@@ -897,8 +932,10 @@ def detect_seasonality(
         df = load_csv(file_path)
         
         if column not in df.columns:
-            raise ValueError(f"Column '{column}' not found")
-        
+            fallback_column = detect_numeric_column(df)
+            if fallback_column is None:
+                raise ValueError(f"Column '{column}' not found and no numeric fallback column exists")
+            column = fallback_column
         if date_column is None:
             date_column = detect_date_column(df)
         
